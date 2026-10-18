@@ -1,6 +1,8 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { Guard } from "@/components/shell";
+import { supabaseBrowser } from "@/lib/supabase/client";
 import { Card, Empty, Loading, Notice, PageHeader, Stat, inputCls } from "@/components/ui";
 import { rpc, useLoad } from "@/lib/data";
 import { rupees } from "@/lib/format";
@@ -19,6 +21,38 @@ type Dash = {
 type Point = { day: string; orders: number; net_paise: number };
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+type Todo = { label: string; count: number; href: string; hint: string };
+
+/** Counts of work waiting for a person. A count the signed-in role cannot read simply does not appear. */
+async function loadTodos(): Promise<Todo[]> {
+  const db = supabaseBrowser();
+  const count = async (table: string, col: string, values: string[]) => {
+    const { count: c, error } = await db.from(table).select("id", { count: "exact", head: true }).in(col, values);
+    return error ? null : (c ?? 0);
+  };
+  const codCount = async () => {
+    const { count: c, error } = await db.from("cod_collections").select("order_id", { count: "exact", head: true }).eq("status", "collected");
+    return error ? null : (c ?? 0);
+  };
+  const [orders, cod, returns, warranty, enquiries, refunds] = await Promise.all([
+    count("orders", "status", ["placed", "confirmed", "packed"]),
+    codCount(),
+    count("return_requests", "status", ["requested"]),
+    count("warranty_claims", "status", ["submitted"]),
+    count("sell_enquiries", "status", ["submitted"]),
+    count("refunds", "status", ["requested", "pending"]),
+  ]);
+  const all: [string, number | null, string, string][] = [
+    ["Orders to process", orders, "/orders", "Placed, confirmed or packed"],
+    ["COD to reconcile", cod, "/payments", "Cash collected, not yet reconciled"],
+    ["Return requests", returns, "/support", "Waiting for a decision"],
+    ["Warranty claims", warranty, "/support", "New claims"],
+    ["Sell / exchange enquiries", enquiries, "/support", "Waiting for an offer"],
+    ["Refunds in progress", refunds, "/payments", "Requested or pending"],
+  ];
+  return all.filter(([, c]) => c != null).map(([label, c, href, hint]) => ({ label, count: c as number, href, hint }));
+}
 
 function range(from: string, to: string) {
   // IST day boundaries expressed as absolute timestamps; `to` is inclusive of the chosen day
@@ -41,6 +75,7 @@ function Body() {
     return { d, s };
   }, [from, to, finance]);
 
+  const todos = useLoad(loadTodos, []);
   const d = data?.d;
   const series = data?.s ?? [];
   const max = Math.max(1, ...series.map((p) => p.net_paise));
@@ -57,6 +92,20 @@ function Body() {
       {loading && !d && <Loading />}
       {d && (
         <div className="space-y-5">
+          {todos.data && todos.data.length > 0 && (
+            <Card title="Needs attention">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                {todos.data.map((t) => (
+                  <Link key={t.label} href={t.href}
+                    className={`rounded-xl border p-3 transition hover:shadow-sm ${t.count > 0 ? "border-amber-300 bg-amber-50" : "border-neutral-200 bg-neutral-50"}`}>
+                    <div className={`text-2xl font-bold ${t.count > 0 ? "text-amber-800" : "text-neutral-400"}`}>{t.count}</div>
+                    <div className="text-sm font-semibold">{t.label}</div>
+                    <div className="text-xs text-neutral-500">{t.hint}</div>
+                  </Link>
+                ))}
+              </div>
+            </Card>
+          )}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <Stat label="Orders" value={d.orders.total} />
             <Stat label="Completed" value={d.orders.completed} />

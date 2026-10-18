@@ -99,7 +99,15 @@ export function Notice({ kind = "error", children }: { kind?: "error" | "ok" | "
 }
 
 export function Loading() {
-  return <div className="p-6 text-sm text-neutral-500">Loading…</div>;
+  return (
+    <div className="space-y-3 p-2" role="status" aria-label="Loading">
+      <div className="h-7 w-48 animate-pulse rounded-lg bg-neutral-200" />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-neutral-200" />)}
+      </div>
+      <div className="h-64 animate-pulse rounded-2xl bg-neutral-200" />
+    </div>
+  );
 }
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="rounded-xl border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500">{children}</div>;
@@ -107,12 +115,12 @@ export function Empty({ children }: { children: ReactNode }) {
 
 export function Table({ head, children }: { head: string[]; children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-neutral-200 bg-white">
+    <div className="max-h-[70vh] overflow-auto rounded-2xl border border-neutral-200 bg-white shadow-sm">
       <table className="min-w-full text-left text-sm">
-        <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
-          <tr>{head.map((h) => <th key={h} className="px-3 py-2 font-semibold">{h}</th>)}</tr>
+        <thead className="sticky top-0 z-10 bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500 shadow-[0_1px_0_0_#e5e5e5]">
+          <tr>{head.map((h) => <th key={h} scope="col" className="whitespace-nowrap px-3 py-2.5 font-semibold">{h}</th>)}</tr>
         </thead>
-        <tbody className="divide-y divide-neutral-100">{children}</tbody>
+        <tbody className="divide-y divide-neutral-100 [&>tr:hover]:bg-neutral-50/70">{children}</tbody>
       </table>
     </div>
   );
