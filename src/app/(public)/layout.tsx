@@ -20,7 +20,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
         {children}
       </main>
       <footer className="mt-12 border-t border-neutral-200 pt-4 text-sm text-neutral-500">
-        BudgetPhonewala, Chowk, Bhadule Rd, Navi Peth, Chouphala, Pandharpur, Maharashtra 413304 · +91 98500 07981 · budgetphonewala2@gmail.com
+        BudgetPhonewala, Chowk, Bhadule Rd, Navi Peth, Chouphala, Pandharpur, Maharashtra 413304 · +91 98500 07981 · budgetphonewala@gmail.com
       </footer>
     </div>
   );

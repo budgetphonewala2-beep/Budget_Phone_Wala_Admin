@@ -85,7 +85,7 @@ export default function DeleteAccountPage() {
             </div>
           </form>
           <p className="mt-4 text-sm text-neutral-600">
-            Cannot sign in? Email <a href="mailto:budgetphonewala2@gmail.com?subject=Delete%20my%20BudgetPhonewala%20account">budgetphonewala2@gmail.com</a> from the
+            Cannot sign in? Email <a href="mailto:budgetphonewala@gmail.com?subject=Delete%20my%20BudgetPhonewala%20account">budgetphonewala@gmail.com</a> from the
             address on your account, or call +91 98500 07981, and we will handle the request.
           </p>
         </section>

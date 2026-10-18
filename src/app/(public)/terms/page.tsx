@@ -29,7 +29,7 @@ export default function TermsPage() {
       <h2>Selling or exchanging your phone</h2>
       <p>An estimate in the app is not a final offer. The final offer is made by the shop after inspecting the phone.</p>
       <h2>Contact</h2>
-      <p>BudgetPhonewala, Pandharpur, Maharashtra. +91 98500 07981. budgetphonewala2@gmail.com.</p>
+      <p>BudgetPhonewala, Pandharpur, Maharashtra. +91 98500 07981. budgetphonewala@gmail.com.</p>
     </>
   );
 }

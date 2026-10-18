@@ -70,7 +70,7 @@ export default function PrivacyPage() {
       <p>If we change this policy we will update the date above and, for important changes, tell you in the app.</p>
 
       <h2>9. Contact</h2>
-      <p>BudgetPhonewala, Chowk, Bhadule Rd, Navi Peth, Chouphala, Pandharpur, Maharashtra 413304. Phone or WhatsApp +91 98500 07981. Email budgetphonewala2@gmail.com.</p>
+      <p>BudgetPhonewala, Chowk, Bhadule Rd, Navi Peth, Chouphala, Pandharpur, Maharashtra 413304. Phone or WhatsApp +91 98500 07981. Email budgetphonewala@gmail.com.</p>
     </>
   );
 }
