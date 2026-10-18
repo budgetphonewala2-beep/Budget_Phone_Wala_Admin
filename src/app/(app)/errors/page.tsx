@@ -1,10 +1,47 @@
 "use client";
 import { useState } from "react";
 import { Guard } from "@/components/shell";
-import { Badge, Btn, Empty, Loading, Notice, PageHeader, Stat, Table, Td, inputCls } from "@/components/ui";
+import { Badge, Btn, Card, Empty, Loading, Notice, PageHeader, Stat, Table, Td, inputCls } from "@/components/ui";
 import { errText, rpc, useLoad, type Row } from "@/lib/data";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { dateTime } from "@/lib/format";
+
+const CHECKS: { key: string; label: string; hint: string; critical: boolean }[] = [
+  { key: "money_taken_order_not_confirmed", label: "Paid but order not confirmed", hint: "A customer was charged and the order is not confirmed. Confirm it or refund.", critical: true },
+  { key: "expired_orders_not_released", label: "Unpaid orders not cancelled", hint: "The hold-release job is not running.", critical: true },
+  { key: "expired_reservations_not_released", label: "Phones stuck on hold", hint: "Phones are hidden from the shop. The hold-release job is not running.", critical: true },
+  { key: "payment_event_problems_24h", label: "Payment events that did not match", hint: "Last 24 hours. Check Payments.", critical: true },
+  { key: "refunds_stuck_over_1h", label: "Refunds waiting over 1 hour", hint: "Check the refund status in Payments.", critical: true },
+  { key: "notifications_stuck_over_15m", label: "Notifications not sent", hint: "The dispatcher is not running.", critical: false },
+  { key: "notification_failures_1h", label: "Notification failures (1 hour)", hint: "", critical: false },
+  { key: "app_crashes_1h", label: "App crashes (1 hour)", hint: "", critical: false },
+];
+
+function Operations() {
+  const { data, error, loading } = useLoad(() => rpc<Record<string, number>>("admin_ops_health"), []);
+  if (error) return <Notice>{error}</Notice>;
+  if (loading && !data) return null;
+  const rows = CHECKS.map((c) => ({ ...c, n: Number(data?.[c.key] ?? 0) }));
+  const bad = rows.filter((r) => r.critical && r.n > 0);
+  return (
+    <Card title="Operations">
+      <div className={`mb-3 rounded-xl px-3 py-2 text-sm font-semibold ${bad.length ? "bg-red-50 text-red-800" : "bg-green-50 text-green-800"}`}>
+        {bad.length ? `${bad.length} item${bad.length > 1 ? "s" : ""} need attention` : "Everything is running normally"}
+      </div>
+      <ul className="divide-y divide-neutral-100 text-sm">
+        {rows.map((r) => (
+          <li key={r.key} className="flex items-start justify-between gap-3 py-2">
+            <div>
+              <div className="font-medium">{r.label}</div>
+              {r.n > 0 && r.hint && <div className="text-xs text-neutral-500">{r.hint}</div>}
+            </div>
+            <Badge tone={r.n === 0 ? "green" : r.critical ? "red" : "amber"}>{r.n}</Badge>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
 
 function Body() {
   const [category, setCategory] = useState("");
@@ -39,6 +76,7 @@ function Body() {
           <Btn kind="ghost" onClick={purge}>Delete old reports</Btn>
         </>} />
       {(error || msg) && <Notice kind={error ? "error" : msg!.kind}>{error ?? msg!.text}</Notice>}
+      <div className="mb-4"><Operations /></div>
       {loading && !data && <Loading />}
       {data && (
         <div className="space-y-4">
