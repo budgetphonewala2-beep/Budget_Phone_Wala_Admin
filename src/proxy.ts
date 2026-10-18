@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC = ["/login", "/auth/callback", "/privacy", "/terms", "/delete-account"];
+const PUBLIC = ["/login", "/auth/callback", "/privacy", "/terms", "/delete-account", "/open-app"];
 
 // Refreshes the Supabase session cookie and keeps signed-out visitors on /login.
 // This is a convenience gate only: authorization is enforced by RLS and has_permission() in the database.
