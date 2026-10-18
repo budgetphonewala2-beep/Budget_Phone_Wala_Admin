@@ -48,6 +48,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/delivery", label: "Delivery & COD", perm: "delivery.configure", icon: "delivery" },
       { href: "/settings", label: "Store & policies", perm: "settings.manage|policies.manage", icon: "settings" },
       { href: "/staff", label: "Staff & roles", perm: "staff.read|staff.manage", icon: "staff" },
+      { href: "/errors", label: "App health", perm: "audit.view", icon: "alert" },
     ],
   },
 ];
