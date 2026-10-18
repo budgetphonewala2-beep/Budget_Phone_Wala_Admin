@@ -20,6 +20,7 @@ const NAV: { href: string; label: string; perm: string }[] = [
   { href: "/marketing", label: "Coupons & campaigns", perm: "coupons.manage|marketing.send|notifications.send" },
   { href: "/delivery", label: "Delivery & COD", perm: "delivery.configure" },
   { href: "/settings", label: "Store & policies", perm: "settings.manage|policies.manage" },
+  { href: "/content", label: "Banners & FAQs", perm: "settings.manage" },
   { href: "/staff", label: "Staff & roles", perm: "staff.read" },
   { href: "/import-export", label: "Import / export", perm: "products.import|products.export" },
   { href: "/audit", label: "Audit log", perm: "audit.view" },
