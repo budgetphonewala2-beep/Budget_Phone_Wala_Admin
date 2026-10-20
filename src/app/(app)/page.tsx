@@ -62,6 +62,42 @@ function range(from: string, to: string) {
   return { p_from: f.toISOString(), p_to: t.toISOString() };
 }
 
+type Step = { done: boolean; text: string; href: string; action: string };
+
+/** First-run checklist: the shop is not ready for customers until these exist. Disappears when everything is done. */
+function SetupChecklist() {
+  const { data } = useLoad(async (): Promise<Step[]> => {
+    const db = supabaseBrowser();
+    const n = async (q: PromiseLike<{ count: number | null; error: unknown }>) => { const r = await q; return r.error ? null : (r.count ?? 0); };
+    const [live, zones, ret, war] = await Promise.all([
+      n(db.from("admin_inventory_units").select("id", { count: "exact", head: true }).eq("status", "available")),
+      n(db.from("delivery_zones").select("id", { count: "exact", head: true }).eq("is_active", true)),
+      n(db.from("return_policies").select("id", { count: "exact", head: true }).eq("is_active", true).not("approved_at", "is", null)),
+      n(db.from("warranty_policies").select("id", { count: "exact", head: true }).eq("is_active", true).not("approved_at", "is", null)),
+    ]);
+    const steps: Step[] = [];
+    if (live != null) steps.push({ done: live > 0, text: "Add your first phone so customers can see it in the app", href: "/products/new", action: "Add a phone" });
+    if (zones != null) steps.push({ done: zones > 0, text: "Add a delivery zone (areas, charges, cash on delivery)", href: "/delivery", action: "Set up delivery" });
+    if (ret != null) steps.push({ done: ret > 0, text: "Approve your return policy (customers cannot request returns without it)", href: "/settings", action: "Open policies" });
+    if (war != null) steps.push({ done: war > 0, text: "Approve your warranty policy", href: "/settings", action: "Open policies" });
+    return steps;
+  }, []);
+  if (!data || data.length === 0 || data.every((s) => s.done)) return null;
+  const left = data.filter((s) => !s.done).length;
+  return (
+    <Card title={`Set up your shop — ${left} step${left === 1 ? "" : "s"} left`}>
+      <ul className="space-y-2">
+        {data.map((s) => (
+          <li key={s.text} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className={s.done ? "text-neutral-400 line-through" : ""}>{s.done ? "✅" : "⬜"} {s.text}</span>
+            {!s.done && <Link href={s.href} className="font-semibold text-[#D7263D] underline">{s.action}</Link>}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function Body() {
   const perms = usePerms();
   const today = new Date();
@@ -82,12 +118,13 @@ function Body() {
 
   return (
     <>
-      <PageHeader title="Dashboard" subtitle="All figures are computed in the database from real orders, payments and stock."
+      <PageHeader title="Home" subtitle="Today at a glance. Figures come straight from real orders, payments and stock."
         actions={<div className="flex items-center gap-2 text-sm">
           <input aria-label="From" type="date" className={inputCls} value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
           <span>to</span>
           <input aria-label="To" type="date" className={inputCls} value={to} min={from} onChange={(e) => setTo(e.target.value)} />
         </div>} />
+      <div className="mb-5"><SetupChecklist /></div>
       {error && <Notice>{error}</Notice>}
       {loading && !d && <Loading />}
       {d && (

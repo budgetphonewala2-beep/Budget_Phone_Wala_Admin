@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Guard, usePerms } from "@/components/shell";
 import { Badge, Btn, Empty, Field, Loading, Modal, Notice, PageHeader, Table, Td, inputCls, statusTone } from "@/components/ui";
 import { errText, rpc, useLoad, type Row } from "@/lib/data";
@@ -13,12 +13,44 @@ const ENQUIRY = ["reviewing", "offer_made", "accepted", "rejected", "completed",
 
 async function load() {
   const db = supabaseBrowser();
-  const [w, r, e] = await Promise.all([
+  const [w, r, e, ph] = await Promise.all([
     db.from("warranty_claims").select("*").order("created_at", { ascending: false }).limit(100),
     db.from("return_requests").select("*").order("created_at", { ascending: false }).limit(100),
     db.from("sell_enquiries").select("*").order("created_at", { ascending: false }).limit(100),
+    db.from("sell_enquiry_photos").select("id,enquiry_id,storage_path,created_at").order("created_at").limit(1000),
   ]);
-  return { w: (w.data ?? []) as Row[], r: (r.data ?? []) as Row[], e: (e.data ?? []) as Row[], errs: [w.error, r.error, e.error].filter(Boolean) };
+  return { w: (w.data ?? []) as Row[], r: (r.data ?? []) as Row[], e: (e.data ?? []) as Row[], photos: (ph.data ?? []) as Row[], errs: [w.error, r.error, e.error, ph.error].filter(Boolean) };
+}
+
+/** Customer photos live in a private bucket, so each one is shown through a short-lived signed link. */
+function EnquiryPhotos({ paths }: { paths: string[] }) {
+  const [urls, setUrls] = useState<{ path: string; url: string }[] | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const key = paths.join("|");
+  useEffect(() => {
+    let off = false;
+    if (paths.length === 0) return;
+    supabaseBrowser().storage.from("enquiry-photos").createSignedUrls(paths, 3600).then(({ data, error }) => {
+      if (off) return;
+      if (error) return setProblem(errText(error));
+      setUrls((data ?? []).filter((d) => d.signedUrl).map((d) => ({ path: String(d.path), url: String(d.signedUrl) })));
+    });
+    return () => { off = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  if (paths.length === 0) return <p className="text-sm text-neutral-500">The customer did not attach photos.</p>;
+  if (problem) return <Notice>{problem}</Notice>;
+  if (!urls) return <p className="text-sm text-neutral-500">Loading photos…</p>;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {urls.map((u) => (
+        <a key={u.path} href={u.url} target="_blank" rel="noreferrer" title="Open full size">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={u.url} alt="Customer photo" className="h-28 w-28 rounded-xl border border-neutral-200 object-cover" />
+        </a>
+      ))}
+    </div>
+  );
 }
 
 function Body() {
@@ -96,11 +128,12 @@ function Body() {
         </Table>
       ))}
       {data && tab === "enquiries" && (data.e.length === 0 ? <Empty>No enquiries.</Empty> : (
-        <Table head={["Enquiry", "Type", "Phone", "Customer expects", "Our offer", "Status", ""]}>
+        <Table head={["Enquiry", "Type", "Customer", "Photos", "Customer expects", "Our offer", "Status", ""]}>
           {data.e.map((c) => (
             <tr key={String(c.id)}><Td className="font-mono text-xs">{String(c.enquiry_number)}</Td>
               <Td>{label(String(c.type))}<div className="text-xs text-neutral-500">{String(c.brand)} {String(c.model)} {c.storage_gb ? `${String(c.storage_gb)}GB` : ""}</div></Td>
               <Td>{String(c.contact_name)}<div className="text-xs text-neutral-500">{String(c.contact_phone)}</div></Td>
+              <Td>{data.photos.filter((p) => p.enquiry_id === c.id).length || "-"}</Td>
               <Td>{rupees(c.expected_price_paise as number | null)}</Td><Td>{rupees(c.admin_offer_paise as number | null)}</Td>
               <Td><Badge tone={statusTone(String(c.status))}>{label(String(c.status))}</Badge></Td>
               <Td><Btn kind="ghost" onClick={() => open("enquiries", c)}>Respond</Btn></Td></tr>
@@ -108,13 +141,27 @@ function Body() {
         </Table>
       ))}
       {edit && (
-        <Modal title="Update" onClose={() => setEdit(null)}>
+        <Modal title={edit.kind === "enquiries" ? `Enquiry ${String(edit.row.enquiry_number)}` : "Update"} onClose={() => setEdit(null)}>
           <div className="space-y-3">
+            {edit.kind === "enquiries" && data && (
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm">
+                <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                  <div><span className="text-neutral-500">Phone: </span>{String(edit.row.brand)} {String(edit.row.model)}{edit.row.storage_gb ? ` ${String(edit.row.storage_gb)}GB` : ""}</div>
+                  <div><span className="text-neutral-500">Type: </span>{label(String(edit.row.type))}</div>
+                  <div><span className="text-neutral-500">Customer: </span>{String(edit.row.contact_name)} · {String(edit.row.contact_phone)}</div>
+                  <div><span className="text-neutral-500">Battery: </span>{edit.row.battery_health_pct ? `${String(edit.row.battery_health_pct)}%` : "-"}</div>
+                  <div><span className="text-neutral-500">Expects: </span>{rupees(edit.row.expected_price_paise as number | null)}</div>
+                  <div><span className="text-neutral-500">Accessories: </span>{String(edit.row.accessories || "-")}</div>
+                </div>
+                {edit.row.condition ? <p className="mt-2"><span className="text-neutral-500">Condition: </span>{String(edit.row.condition)}</p> : null}
+                <div className="mt-3"><EnquiryPhotos paths={data.photos.filter((p) => p.enquiry_id === edit.row.id).map((p) => String(p.storage_path))} /></div>
+              </div>
+            )}
             <Field label="Status"><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value={String(edit.row.status)}>{label(String(edit.row.status))} (current)</option>
               {options.filter((s) => s !== edit.row.status).map((s) => <option key={s} value={s}>{label(s)}</option>)}</select></Field>
             {edit.kind === "returns" && <Field label="Refund amount (₹)" hint="Leave blank to decide later. Money moves from the Orders screen."><input className={inputCls} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>}
-            {edit.kind === "enquiries" && <Field label="Offer (₹)"><input className={inputCls} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>}
+            {edit.kind === "enquiries" && <Field label="Your offer (₹)"><input className={inputCls} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>}
             {edit.kind === "warranty" && <Field label="Resolution"><input className={inputCls} value={resolution} onChange={(e) => setResolution(e.target.value)} /></Field>}
             <Field label="Notes"><textarea className={inputCls} rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
             <div className="flex gap-2"><Btn onClick={save}>Save</Btn><Btn kind="ghost" onClick={() => setEdit(null)}>Cancel</Btn></div>

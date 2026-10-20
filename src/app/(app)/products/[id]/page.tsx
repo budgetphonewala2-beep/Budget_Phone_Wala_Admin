@@ -6,6 +6,7 @@ import { Badge, Btn, Card, Empty, Field, Loading, Modal, Notice, PageHeader, Tab
 import { errText, rpc, useLoad, type Row } from "@/lib/data";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { label, rupees, toPaise } from "@/lib/format";
+import { prepareImage } from "@/lib/images";
 
 async function load(id: string) {
   const db = supabaseBrowser();
@@ -23,7 +24,7 @@ type UnitForm = {
   id?: string; variant_id: string; condition_grade: string; battery: string; price: string; mrp: string; cost: string; imei: string;
   has_bill: boolean; has_box: boolean; accessories: string; defects: string; status: string; warranty: string;
 };
-const emptyUnit: UnitForm = { variant_id: "", condition_grade: "A", battery: "", price: "", mrp: "", cost: "", imei: "", has_bill: false, has_box: false, accessories: "", defects: "", status: "draft", warranty: "" };
+const emptyUnit: UnitForm = { variant_id: "", condition_grade: "A", battery: "", price: "", mrp: "", cost: "", imei: "", has_bill: false, has_box: false, accessories: "", defects: "", status: "available", warranty: "" };
 const MANUAL = ["draft", "available", "inspection", "returned_repair", "unavailable", "archived"];
 
 function Body({ id }: { id: string }) {
@@ -84,22 +85,34 @@ function Body({ id }: { id: string }) {
     await run(() => rpc("admin_set_unit_status", { p_unit: u.id, p_to: to, p_reason: reason.trim() }), "Unit status updated.");
   }
 
-  async function upload(files: FileList | null) {
-    if (!files?.length) return;
-    await run(async () => {
-      const db = supabaseBrowser();
-      let order = (data?.images.length ?? 0) + 1;
-      for (const f of Array.from(files)) {
-        if (!["image/jpeg", "image/png", "image/webp"].includes(f.type)) throw new Error(`${f.name}: only JPG, PNG or WebP`);
-        if (f.size > 5 * 1024 * 1024) throw new Error(`${f.name}: larger than 5 MB`);
-        const ext = f.type === "image/png" ? "png" : f.type === "image/webp" ? "webp" : "jpg";
-        const path = `models/${id}/${crypto.randomUUID()}.${ext}`;
-        const up = await db.storage.from("product-images").upload(path, f, { contentType: f.type, upsert: false });
+  async function upload(input: HTMLInputElement) {
+    const files = input.files ? Array.from(input.files) : [];
+    input.value = "";
+    if (!files.length) return;
+    setBusy(true);
+    setMsg(null);
+    const db = supabaseBrowser();
+    const failed: string[] = [];
+    let order = (data?.images.reduce((m, i) => Math.max(m, Number(i.sort_order) || 0), 0) ?? 0) + 1;
+    let first = (data?.images.length ?? 0) === 0;
+    let done = 0;
+    for (const f of files) {
+      try {
+        const img = await prepareImage(f);
+        const path = `models/${id}/${crypto.randomUUID()}.${img.ext}`;
+        const up = await db.storage.from("product-images").upload(path, img.blob, { contentType: img.type, upsert: false });
         if (up.error) throw up.error;
-        const ins = await db.from("product_images").insert({ model_id: id, storage_path: path, sort_order: order++, is_primary: (data?.images.length ?? 0) === 0 && order === 2, alt: String(data?.model.name ?? "") });
+        const ins = await db.from("product_images").insert({ model_id: id, storage_path: path, sort_order: order++, is_primary: first, alt: String(data?.model.name ?? "") });
         if (ins.error) throw ins.error;
+        first = false;
+        done++;
+      } catch (e) {
+        failed.push(e instanceof Error ? e.message : errText(e));
       }
-    }, "Photos uploaded.");
+    }
+    setBusy(false);
+    setMsg({ kind: failed.length ? "error" : "ok", text: `${done} photo${done === 1 ? "" : "s"} uploaded.${failed.length ? ` Skipped: ${failed.join(" · ")}` : ""}` });
+    await reload();
   }
 
   async function makePrimary(imgId: string) {
@@ -133,9 +146,32 @@ function Body({ id }: { id: string }) {
     <>
       <PageHeader title={String(model.name)} subtitle={`Status: ${label(String(model.status))}`} actions={<Link href="/products"><Btn kind="ghost">All models</Btn></Link>} />
       {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
+      {(() => {
+        const activeVariants = variants.filter((v) => v.status === "active").length;
+        const available = units.filter((u) => u.status === "available").length;
+        const checks: [boolean, string][] = [
+          [activeVariants > 0, "Storage and colour added"],
+          [units.length > 0, "A phone unit with a price added"],
+          [available > 0, "At least one unit is set to Available (a Draft unit is never shown)"],
+          [model.status === "published", "Phone is published"],
+          [images.length > 0, "At least one photo (recommended)"],
+        ];
+        const live = activeVariants > 0 && available > 0 && model.status === "published";
+        return (
+          <div className={`mb-4 rounded-2xl border p-4 text-sm ${live ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <strong>{live ? "This phone is live in the app." : "Customers cannot see this phone yet."}</strong>
+              {model.status !== "published" && model.status !== "archived" && perms.has("products.publish") && (
+                <Btn disabled={busy} onClick={() => run(async () => { const { error: e } = await supabaseBrowser().from("product_models").update({ status: "published", published_at: new Date().toISOString() }).eq("id", id); if (e) throw e; }, "Published.")}>Publish now</Btn>
+              )}
+            </div>
+            <ul className="space-y-0.5">{checks.map(([ok, text]) => <li key={text}>{ok ? "✅" : "⬜"} {text}</li>)}</ul>
+          </div>
+        );
+      })()}
 
       <div className="space-y-4">
-        <Card title="Photos">
+        <Card title="Photos (the first one is the cover)">
           <div className="flex flex-wrap gap-3">
             {images.map((i) => (
               <div key={String(i.id)} className="w-28">
@@ -150,7 +186,7 @@ function Body({ id }: { id: string }) {
             {images.length === 0 && <p className="text-sm text-neutral-500">No photos yet. Phones without photos look unfinished in the shop.</p>}
           </div>
           {perms.has("products.update") && (
-            <div className="mt-3"><input aria-label="Upload photos" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={(e) => upload(e.target.files)} /></div>
+            <div className="mt-3"><input aria-label="Upload photos" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={(e) => void upload(e.target)} /></div>
           )}
         </Card>
 
@@ -170,10 +206,10 @@ function Body({ id }: { id: string }) {
         </Card>
 
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">Units</h2>
-          {perms.has("products.create") && <Btn disabled={variants.length === 0} onClick={() => setUnit({ ...emptyUnit, variant_id: String(variants[0]?.id ?? "") })}>Add unit</Btn>}
+          <h2 className="text-lg font-bold">Phones in stock</h2>
+          {perms.has("products.create") && <Btn disabled={variants.length === 0} onClick={() => setUnit({ ...emptyUnit, status: perms.has("products.publish") ? "available" : "draft", variant_id: String(variants[0]?.id ?? "") })}>Add another unit</Btn>}
         </div>
-        {units.length === 0 ? <Empty>No units for this model.</Empty> : (
+        {units.length === 0 ? <Empty>No phone units yet. Add storage and colour above, then press “Add another unit”.</Empty> : (
           <Table head={["Code", "Variant", "Grade", "Battery", "Price", "IMEI", "Status", ""]}>
             {units.map((u) => (
               <tr key={String(u.id)}>

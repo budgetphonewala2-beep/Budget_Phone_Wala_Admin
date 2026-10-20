@@ -11,43 +11,42 @@ const PermCtx = createContext<Perms>({ isOwner: false, list: [], has: () => fals
 export const usePerms = () => useContext(PermCtx);
 
 type NavItem = { href: string; label: string; perm: string; icon: IconName };
-const GROUPS: { title: string; items: NavItem[] }[] = [
-  { title: "Overview", items: [{ href: "/", label: "Dashboard", perm: "reports.view", icon: "dashboard" }] },
+// Daily work is always visible; everything else sits under "More" so the menu stays short.
+const GROUPS: { title: string; more?: boolean; items: NavItem[] }[] = [
   {
-    title: "Sales",
+    title: "Daily",
     items: [
+      { href: "/", label: "Home", perm: "reports.view", icon: "dashboard" },
       { href: "/orders", label: "Orders", perm: "orders.read", icon: "orders" },
-      { href: "/payments", label: "Payments & refunds", perm: "payments.read", icon: "payments" },
+      { href: "/products", label: "Phones", perm: "products.read", icon: "products" },
+      { href: "/support", label: "Requests & enquiries", perm: "returns.manage|warranty.manage|enquiries.manage", icon: "support" },
+      { href: "/customers", label: "Customers", perm: "customers.read", icon: "customers" },
     ],
   },
   {
-    title: "Catalogue",
+    title: "Money & stock",
+    more: true,
     items: [
-      { href: "/products", label: "Products & units", perm: "products.read", icon: "products" },
-      { href: "/inventory", label: "Inventory", perm: "inventory.read", icon: "inventory" },
+      { href: "/payments", label: "Payments & refunds", perm: "payments.read", icon: "payments" },
+      { href: "/inventory", label: "Stock list", perm: "inventory.read", icon: "inventory" },
       { href: "/import-export", label: "Import / export", perm: "products.import|products.export", icon: "import" },
     ],
   },
   {
-    title: "Customers",
-    items: [
-      { href: "/customers", label: "Customers", perm: "customers.read", icon: "customers" },
-      { href: "/support", label: "Warranty, returns, enquiries", perm: "returns.manage|warranty.manage|enquiries.manage", icon: "support" },
-    ],
-  },
-  {
-    title: "Marketing",
-    items: [
-      { href: "/marketing", label: "Coupons & campaigns", perm: "coupons.manage|marketing.send|notifications.send", icon: "marketing" },
-      { href: "/content", label: "Banners & FAQs", perm: "settings.manage", icon: "content" },
-    ],
-  },
-  {
-    title: "Store",
+    title: "Shop setup",
+    more: true,
     items: [
       { href: "/delivery", label: "Delivery & COD", perm: "delivery.configure", icon: "delivery" },
-      { href: "/settings", label: "Store & policies", perm: "settings.manage|policies.manage", icon: "settings" },
-      { href: "/staff", label: "Staff & roles", perm: "staff.read|staff.manage", icon: "staff" },
+      { href: "/settings", label: "Shop details & policies", perm: "settings.manage|policies.manage", icon: "settings" },
+      { href: "/content", label: "Banners & FAQs", perm: "settings.manage", icon: "content" },
+      { href: "/marketing", label: "Coupons & offers", perm: "coupons.manage|marketing.send|notifications.send", icon: "marketing" },
+    ],
+  },
+  {
+    title: "Team & health",
+    more: true,
+    items: [
+      { href: "/staff", label: "Staff", perm: "staff.read|staff.manage", icon: "staff" },
       { href: "/errors", label: "App health", perm: "audit.view", icon: "alert" },
     ],
   },
@@ -100,25 +99,36 @@ export function Shell({ children }: { children: ReactNode }) {
   const current = groups.flatMap((g) => g.items).find((n) => (n.href === "/" ? path === "/" : path.startsWith(n.href)));
   const initial = (email[0] ?? "A").toUpperCase();
 
+  const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
+  const link = (n: NavItem) => (
+    <Link key={n.href} href={n.href} onClick={() => setOpen(false)} aria-current={isActive(n.href) ? "page" : undefined}
+      className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition ${isActive(n.href) ? "bg-[#D7263D] text-white shadow-sm" : "text-neutral-700 hover:bg-neutral-100"}`}>
+      <Icon name={n.icon} />
+      <span className="truncate">{n.label}</span>
+    </Link>
+  );
+  const main = groups.filter((g) => !g.more);
+  const more = groups.filter((g) => g.more);
+  const moreOpen = more.some((g) => g.items.some((n) => isActive(n.href)));
+
   const nav = (
-    <nav className="flex flex-col gap-4 px-3 pb-4" aria-label="Main">
-      {groups.map((g) => (
-        <div key={g.title}>
-          <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">{g.title}</div>
-          <div className="flex flex-col gap-0.5">
-            {g.items.map((n) => {
-              const active = n.href === "/" ? path === "/" : path.startsWith(n.href);
-              return (
-                <Link key={n.href} href={n.href} onClick={() => setOpen(false)} aria-current={active ? "page" : undefined}
-                  className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition ${active ? "bg-[#D7263D] text-white shadow-sm" : "text-neutral-700 hover:bg-neutral-100"}`}>
-                  <Icon name={n.icon} />
-                  <span className="truncate">{n.label}</span>
-                </Link>
-              );
-            })}
+    <nav className="flex flex-col gap-3 px-3 pb-4" aria-label="Main">
+      {main.map((g) => <div key={g.title} className="flex flex-col gap-0.5">{g.items.map(link)}</div>)}
+      {more.length > 0 && (
+        <details open={moreOpen} className="group rounded-xl">
+          <summary className="cursor-pointer list-none rounded-xl px-3 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 hover:bg-neutral-100">
+            More settings <span className="float-right transition group-open:rotate-180" aria-hidden="true">▾</span>
+          </summary>
+          <div className="mt-1 flex flex-col gap-3">
+            {more.map((g) => (
+              <div key={g.title}>
+                <div className="px-3 pb-1 text-[11px] font-semibold text-neutral-400">{g.title}</div>
+                <div className="flex flex-col gap-0.5">{g.items.map(link)}</div>
+              </div>
+            ))}
           </div>
-        </div>
-      ))}
+        </details>
+      )}
     </nav>
   );
 

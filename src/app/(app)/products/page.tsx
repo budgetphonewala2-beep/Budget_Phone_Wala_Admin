@@ -2,59 +2,48 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Guard, usePerms } from "@/components/shell";
-import { Badge, Btn, Empty, Field, Loading, Modal, Notice, PageHeader, Table, Td, inputCls, statusTone } from "@/components/ui";
+import { Badge, Btn, Empty, Loading, Notice, PageHeader, Table, Td } from "@/components/ui";
 import { errText, useLoad, type Row } from "@/lib/data";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { label } from "@/lib/format";
 
-const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-
 async function load() {
   const db = supabaseBrowser();
-  const [models, brands, variants] = await Promise.all([
-    db.from("product_models").select("id,name,slug,status,network,release_year,brand_id,cod_allowed,published_at").order("created_at", { ascending: false }),
-    db.from("brands").select("id,name").order("name"),
-    db.from("product_variants").select("id,model_id"),
+  const [models, brands, variants, units, images] = await Promise.all([
+    db.from("product_models").select("id,name,status,network,release_year,brand_id").order("created_at", { ascending: false }),
+    db.from("brands").select("id,name,is_active"),
+    db.from("product_variants").select("id,model_id,status"),
+    db.from("admin_inventory_units").select("model_id,status").limit(5000),
+    db.from("product_images").select("model_id").not("model_id", "is", null).limit(5000),
   ]);
-  for (const r of [models, brands, variants]) if (r.error) throw r.error;
-  return { models: (models.data ?? []) as Row[], brands: (brands.data ?? []) as Row[], variants: (variants.data ?? []) as Row[] };
+  for (const r of [models, brands, variants, units, images]) if (r.error) throw r.error;
+  return {
+    models: (models.data ?? []) as Row[], brands: (brands.data ?? []) as Row[], variants: (variants.data ?? []) as Row[],
+    units: (units.data ?? []) as Row[], images: (images.data ?? []) as Row[],
+  };
+}
+
+type Data = Awaited<ReturnType<typeof load>>;
+
+/** Why a phone is or is not visible in the app. The app lists a model only when it is published, its brand is active, and it has an available unit. */
+function shopState(d: Data, m: Row): { live: boolean; why: string } {
+  const brand = d.brands.find((b) => b.id === m.brand_id);
+  const variants = d.variants.filter((v) => v.model_id === m.id && v.status === "active");
+  const units = d.units.filter((u) => u.model_id === m.id);
+  const available = units.filter((u) => u.status === "available").length;
+  if (m.status === "archived") return { live: false, why: "Archived" };
+  if (brand && brand.is_active === false) return { live: false, why: "Brand is switched off" };
+  if (variants.length === 0) return { live: false, why: "Add storage and colour" };
+  if (units.length === 0) return { live: false, why: "Add a phone unit with a price" };
+  if (available === 0) return { live: false, why: units.some((u) => u.status === "draft") ? "Unit is still a draft: set it to Available" : "No unit is available" };
+  if (m.status !== "published") return { live: false, why: "Not published yet" };
+  return { live: true, why: `${available} in stock` };
 }
 
 function Body() {
   const perms = usePerms();
   const { data, error, loading, reload } = useLoad(load, []);
-  const [open, setOpen] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", brandId: "", newBrand: "", network: "4G", year: "", description: "" });
-  const [busy, setBusy] = useState(false);
-
-  async function create() {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const db = supabaseBrowser();
-      let brandId = form.brandId;
-      if (!brandId && form.newBrand.trim()) {
-        const { data: b, error: be } = await db.from("brands").insert({ name: form.newBrand.trim(), slug: slugify(form.newBrand) }).select("id").single();
-        if (be) throw be;
-        brandId = String(b.id);
-      }
-      if (!brandId) throw new Error("Choose a brand or type a new one");
-      if (form.name.trim().length < 2) throw new Error("Enter the model name");
-      const { error: e } = await db.from("product_models").insert({
-        brand_id: brandId, name: form.name.trim(), slug: slugify(`${form.name}-${Date.now().toString(36)}`),
-        network: form.network, release_year: form.year ? Number(form.year) : null, description: form.description, status: "draft",
-      });
-      if (e) throw e;
-      setOpen(false);
-      setForm({ name: "", brandId: "", newBrand: "", network: "4G", year: "", description: "" });
-      await reload();
-    } catch (e) {
-      setMsg(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function setStatus(id: string, status: string) {
     setMsg(null);
@@ -69,49 +58,40 @@ function Body() {
 
   return (
     <>
-      <PageHeader title="Products & units" subtitle="Models group the phones customers see. Each physical phone is a unit with its own price, condition and IMEI."
-        actions={perms.has("products.create") ? <Btn onClick={() => setOpen(true)}>New model</Btn> : null} />
+      <PageHeader title="Phones" subtitle="Everything you sell. “In the app” shows whether customers can see a phone, and what is missing if they cannot."
+        actions={perms.has("products.create") ? <Link href="/products/new"><Btn>Add a phone</Btn></Link> : null} />
       {(error || msg) && <Notice>{error ?? msg}</Notice>}
       {loading && !data && <Loading />}
-      {data && (data.models.length === 0 ? <Empty>No models yet.</Empty> : (
-        <Table head={["Model", "Brand", "Network", "Variants", "Status", ""]}>
-          {data.models.map((m) => (
-            <tr key={String(m.id)} className="hover:bg-neutral-50">
-              <Td><Link className="font-semibold text-[#D7263D] underline" href={`/products/${String(m.id)}`}>{String(m.name)}</Link></Td>
-              <Td>{brandName(m.brand_id)}</Td>
-              <Td>{String(m.network ?? "-")}{m.release_year ? ` · ${String(m.release_year)}` : ""}</Td>
-              <Td>{data.variants.filter((v) => v.model_id === m.id).length}</Td>
-              <Td><Badge tone={statusTone(String(m.status))}>{label(String(m.status))}</Badge></Td>
-              <Td>
-                <div className="flex gap-1.5">
-                  {m.status !== "published" && perms.has("products.publish") && <Btn kind="ghost" onClick={() => setStatus(String(m.id), "published")}>Publish</Btn>}
-                  {m.status === "published" && perms.has("products.publish") && <Btn kind="ghost" onClick={() => setStatus(String(m.id), "draft")}>Unpublish</Btn>}
-                  {m.status !== "archived" && perms.has("products.archive") && <Btn kind="danger" onClick={() => { if (window.confirm(`Archive ${String(m.name)}? It disappears from the shop; order history is kept.`)) void setStatus(String(m.id), "archived"); }}>Archive</Btn>}
-                </div>
-              </Td>
-            </tr>
-          ))}
+      {data && (data.models.length === 0 ? <Empty>No phones yet. Press “Add a phone” to add your first one.</Empty> : (
+        <Table head={["Phone", "Brand", "Photos", "In the app", ""]}>
+          {data.models.map((m) => {
+            const s = shopState(data, m);
+            const photos = data.images.filter((i) => i.model_id === m.id).length;
+            return (
+              <tr key={String(m.id)}>
+                <Td>
+                  <Link className="font-semibold text-[#D7263D] underline" href={`/products/${String(m.id)}`}>{String(m.name)}</Link>
+                  <div className="text-xs text-neutral-500">{String(m.network ?? "")}{m.release_year ? ` · ${String(m.release_year)}` : ""}</div>
+                </Td>
+                <Td>{brandName(m.brand_id)}</Td>
+                <Td>{photos === 0 ? <span className="text-amber-700">None</span> : photos}</Td>
+                <Td>
+                  <Badge tone={s.live ? "green" : m.status === "archived" ? "red" : "amber"}>{s.live ? "Live" : label(String(m.status)) === "Published" ? "Published, not visible" : "Not visible"}</Badge>
+                  <div className="mt-0.5 text-xs text-neutral-500">{s.why}</div>
+                </Td>
+                <Td>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Link href={`/products/${String(m.id)}`}><Btn kind="ghost">Open</Btn></Link>
+                    {m.status !== "published" && m.status !== "archived" && perms.has("products.publish") && <Btn kind="ghost" onClick={() => setStatus(String(m.id), "published")}>Publish</Btn>}
+                    {m.status === "published" && perms.has("products.publish") && <Btn kind="ghost" onClick={() => setStatus(String(m.id), "draft")}>Hide</Btn>}
+                    {m.status !== "archived" && perms.has("products.archive") && <Btn kind="danger" onClick={() => { if (window.confirm(`Remove ${String(m.name)} from the shop? Order history is kept.`)) void setStatus(String(m.id), "archived"); }}>Remove</Btn>}
+                  </div>
+                </Td>
+              </tr>
+            );
+          })}
         </Table>
       ))}
-      {open && data && (
-        <Modal title="New model" onClose={() => setOpen(false)}>
-          {msg && <Notice>{msg}</Notice>}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Model name"><input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="iPhone 13" /></Field>
-            <Field label="Brand">
-              <select className={inputCls} value={form.brandId} onChange={(e) => setForm({ ...form, brandId: e.target.value })}>
-                <option value="">Choose…</option>
-                {data.brands.map((b) => <option key={String(b.id)} value={String(b.id)}>{String(b.name)}</option>)}
-              </select>
-            </Field>
-            <Field label="…or new brand"><input className={inputCls} value={form.newBrand} onChange={(e) => setForm({ ...form, newBrand: e.target.value })} /></Field>
-            <Field label="Network"><select className={inputCls} value={form.network} onChange={(e) => setForm({ ...form, network: e.target.value })}><option>4G</option><option>5G</option></select></Field>
-            <Field label="Release year"><input className={inputCls} inputMode="numeric" value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value })} /></Field>
-            <div className="sm:col-span-2"><Field label="Description"><textarea className={inputCls} rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field></div>
-          </div>
-          <div className="mt-4 flex gap-2"><Btn disabled={busy} onClick={create}>Create draft</Btn><Btn kind="ghost" onClick={() => setOpen(false)}>Cancel</Btn></div>
-        </Modal>
-      )}
     </>
   );
 }
