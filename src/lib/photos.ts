@@ -1,9 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { prepareImage } from "@/lib/images";
 
-// Product photos are served by the bpw-photos Cloudflare worker (R2 storage, no download charge). When PHOTOS_URL is empty
-// the console falls back to the Supabase "product-images" bucket, which is what older photos still use.
-export const PHOTOS_URL = (process.env.NEXT_PUBLIC_PHOTOS_URL ?? "").replace(/\/$/, "");
+// Product photos are served by the bpw-photos Cloudflare worker (Workers KV storage, no download charge). Setting
+// NEXT_PUBLIC_PHOTOS_URL to an empty string makes the console upload to the Supabase "product-images" bucket instead.
+export const PHOTOS_URL = (process.env.NEXT_PUBLIC_PHOTOS_URL ?? "https://bpw-photos.budgetphonewala.workers.dev").replace(/\/$/, "");
 
 export type StoredPhoto = { storage_path: string; thumb_path: string | null };
 
