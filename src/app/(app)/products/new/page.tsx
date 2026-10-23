@@ -5,7 +5,7 @@ import { Guard, usePerms } from "@/components/shell";
 import { Btn, Card, Field, Notice, PageHeader, inputCls } from "@/components/ui";
 import { errText, rpc, type Row } from "@/lib/data";
 import { supabaseBrowser } from "@/lib/supabase/client";
-import { prepareImage } from "@/lib/images";
+import { uploadProductPhoto } from "@/lib/photos";
 import { toPaise } from "@/lib/format";
 
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -97,11 +97,8 @@ function Body() {
       for (let i = 0; i < files.length; i++) {
         setStep(`Uploading photo ${i + 1} of ${files.length}…`);
         try {
-          const img = await prepareImage(files[i]);
-          const path = `models/${modelId}/${crypto.randomUUID()}.${img.ext}`;
-          const up = await db.storage.from("product-images").upload(path, img.blob, { contentType: img.type, upsert: false });
-          if (up.error) throw up.error;
-          const ins = await db.from("product_images").insert({ model_id: modelId, storage_path: path, sort_order: done + 1, is_primary: done === 0, alt: f.name.trim() });
+          const ph = await uploadProductPhoto(db, modelId, files[i]);
+          const ins = await db.from("product_images").insert({ model_id: modelId, ...ph, sort_order: done + 1, is_primary: done === 0, alt: f.name.trim() });
           if (ins.error) throw ins.error;
           done++;
         } catch (e) {

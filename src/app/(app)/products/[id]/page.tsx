@@ -6,7 +6,7 @@ import { Badge, Btn, Card, Empty, Field, Loading, Modal, Notice, PageHeader, Tab
 import { errText, rpc, useLoad, type Row } from "@/lib/data";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { label, rupees, toPaise } from "@/lib/format";
-import { prepareImage } from "@/lib/images";
+import { photoUrl, removeProductPhoto, uploadProductPhoto } from "@/lib/photos";
 
 async function load(id: string) {
   const db = supabaseBrowser();
@@ -98,11 +98,8 @@ function Body({ id }: { id: string }) {
     let done = 0;
     for (const f of files) {
       try {
-        const img = await prepareImage(f);
-        const path = `models/${id}/${crypto.randomUUID()}.${img.ext}`;
-        const up = await db.storage.from("product-images").upload(path, img.blob, { contentType: img.type, upsert: false });
-        if (up.error) throw up.error;
-        const ins = await db.from("product_images").insert({ model_id: id, storage_path: path, sort_order: order++, is_primary: first, alt: String(data?.model.name ?? "") });
+        const ph = await uploadProductPhoto(db, id, f);
+        const ins = await db.from("product_images").insert({ model_id: id, ...ph, sort_order: order++, is_primary: first, alt: String(data?.model.name ?? "") });
         if (ins.error) throw ins.error;
         first = false;
         done++;
@@ -131,7 +128,7 @@ function Body({ id }: { id: string }) {
       const db = supabaseBrowser();
       const d = await db.from("product_images").delete().eq("id", img.id);
       if (d.error) throw d.error;
-      await db.storage.from("product-images").remove([String(img.storage_path)]);
+      await removeProductPhoto(db, img);
     }, "Photo deleted.");
   }
 
@@ -139,7 +136,7 @@ function Body({ id }: { id: string }) {
   if (loading && !data) return <Loading />;
   if (!data) return null;
   const { model, variants, units, images } = data;
-  const pub = (path: string) => supabaseBrowser().storage.from("product-images").getPublicUrl(path).data.publicUrl;
+  const pub = (path: string) => photoUrl(supabaseBrowser(), path);
   const vName = (u: Row) => `${String(u.storage_gb)}GB · ${String(u.color)}`;
 
   return (

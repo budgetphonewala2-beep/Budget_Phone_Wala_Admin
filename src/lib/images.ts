@@ -1,11 +1,11 @@
 // Phone cameras produce 3-12 MB photos but the storage bucket accepts 5 MB per file. Every photo is resized and re-encoded in the
-// browser first (long side 1600 px, JPEG), so any normal photo uploads and loads fast in the app.
+// browser first (long side 1600 px, JPEG), so any normal photo uploads and loads fast in the app. Thumbnails use 480 px.
 const MAX_SIDE = 1600;
 const MAX_BYTES = 4 * 1024 * 1024;
 
 export type PreparedImage = { blob: Blob; type: "image/jpeg"; ext: "jpg" };
 
-export async function prepareImage(file: File): Promise<PreparedImage> {
+export async function prepareImage(file: File, maxSide = MAX_SIDE): Promise<PreparedImage> {
   if (!file.type.startsWith("image/") && !/\.(jpe?g|png|webp)$/i.test(file.name)) throw new Error(`${file.name}: this is not a photo`);
   let bitmap: ImageBitmap;
   try {
@@ -13,7 +13,7 @@ export async function prepareImage(file: File): Promise<PreparedImage> {
   } catch {
     throw new Error(`${file.name}: this photo format cannot be read here. Use a JPG, PNG or WebP photo (iPhone HEIC photos: share as JPG).`);
   }
-  const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
   const h = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = document.createElement("canvas");
